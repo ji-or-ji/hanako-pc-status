@@ -1,0 +1,217 @@
+{
+  "manifestVersion": 2,
+  "id": "pc-status",
+  "name": "PC Status",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "icon": "assets/icon.png",
+  "description": "感知本机状态：电量、电源计划、负载与剩余空间；周期性注入当前时间；监测网络状态变动。",
+  "minAppVersion": "1.3.6-beta",
+  "capabilities": [
+    "app/tools.expose-to-model",
+    "app/process.spawn",
+    "app/hooks.tools-pre-execute",
+    "app/hooks.tools-post-execute",
+    "app/hooks.agent-before-start"
+  ],
+  "network": {
+    "allowedHosts": ["www.baidu.com"],
+    "methods": ["GET"],
+    "defaultTimeoutMs": 8000,
+    "maxResponseBytes": 65536
+  },
+  "contributes": {
+    "settings": {
+      "title": "PC Status",
+      "schema": {
+        "properties": {
+          "clockInjectEnabled": {
+            "type": "boolean",
+            "title": "启用时钟注入",
+            "description": "在任意工具返回时，周期性地追加一行当前时间",
+            "default": true
+          },
+          "clockIntervalMinutes": {
+            "type": "number",
+            "title": "注入间隔（分钟）",
+            "description": "两次注入之间的最小间隔",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 480
+          },
+          "includeVitalsInClock": {
+            "type": "boolean",
+            "title": "注入时附带电量",
+            "description": "在时钟行后面带上电量与供电状态",
+            "default": true
+          },
+          "reportSlowToolSeconds": {
+            "type": "number",
+            "title": "慢调用提示阈值（秒）",
+            "description": "单次工具调用超过这个秒数时，额外追加一行耗时提示，0 表示关闭",
+            "default": 60,
+            "minimum": 0
+          },
+          "networkWatchEnabled": {
+            "type": "boolean",
+            "title": "网络变动监测",
+            "description": "盯住在线与离线的切换，变化后下一次工具调用就提示；断网时间较长时还会在下次会话开头提醒",
+            "default": true
+          },
+          "networkProbeIntervalSeconds": {
+            "type": "number",
+            "title": "网络探测间隔（秒）",
+            "description": "多久探一次基础连通，范围 10 到 300",
+            "default": 25,
+            "minimum": 10,
+            "maximum": 300
+          },
+          "networkOutageThresholdMinutes": {
+            "type": "number",
+            "title": "断网提醒阈值（分钟）",
+            "description": "断网超过这么久，恢复后算一次「被打断」，会在下次会话开头提醒；低于它只作普通变动提示",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 240
+          },
+          "batteryLowPercent": {
+            "type": "number",
+            "title": "电量偏低线（%）",
+            "description": "电量低于或等于这个值算偏低",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "batteryCriticalPercent": {
+            "type": "number",
+            "title": "电量危急线（%）",
+            "description": "电量低于或等于这个值算危急，不会高于偏低线",
+            "default": 10,
+            "minimum": 0,
+            "maximum": 100
+          },
+          "memoryHighPercent": {
+            "type": "number",
+            "title": "内存告警线（%）",
+            "description": "内存使用率达到这个值就告警",
+            "default": 92,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "diskLowGB": {
+            "type": "number",
+            "title": "磁盘告警线（GB）",
+            "description": "任一磁盘剩余空间低于这个值就告警",
+            "default": 5,
+            "minimum": 0
+          },
+          "serverMemoryHighMB": {
+            "type": "number",
+            "title": "hana-server 内存告警线（MB）",
+            "description": "hana-server 占用超过这个值就告警",
+            "default": 2048,
+            "minimum": 0
+          },
+          "encouragementMode": {
+            "type": "string",
+            "title": "鼓励语时机",
+            "description": "auto 只在检测到匹配模型时追加；always 电量偏低就追加；off 关闭",
+            "enum": ["auto", "always", "off"],
+            "default": "auto"
+          },
+          "encouragementModels": {
+            "type": "string",
+            "title": "鼓励语匹配的模型",
+            "description": "逗号分隔，按子串匹配模型标识，例如 deepseek,qwen",
+            "default": "deepseek"
+          },
+          "encouragementText": {
+            "type": "string",
+            "title": "鼓励语文案",
+            "description": "留空则使用下方 textEncouragement",
+            "default": ""
+          },
+          "textBatteryCritical": {
+            "type": "string",
+            "title": "文案：电量危急",
+            "default": "电量仅 {percent}%，随时可能关机，长任务有中断风险"
+          },
+          "textBatteryLowDischarging": {
+            "type": "string",
+            "title": "文案：电量偏低且未接电源",
+            "default": "电量 {percent}% 且未接电源，建议先接电源再跑长任务"
+          },
+          "textBatteryLowCharging": {
+            "type": "string",
+            "title": "文案：电量偏低但在充电",
+            "default": "电量 {percent}%，正在充电但还没脱离低电量区间"
+          },
+          "textMemoryHigh": {
+            "type": "string",
+            "title": "文案：内存吃紧",
+            "default": "内存吃紧，已用 {usedPercent}%，大文件操作或长会话容易卡顿"
+          },
+          "textDiskLow": {
+            "type": "string",
+            "title": "文案：磁盘将满",
+            "default": "{disk} 只剩 {freeGB} GB，写大文件前先清理"
+          },
+          "textServerMissing": {
+            "type": "string",
+            "title": "文案：hana-server 未运行",
+            "default": "hana-server 没在运行，工具与 Agent 能力可能已失效"
+          },
+          "textServerHeavy": {
+            "type": "string",
+            "title": "文案：hana-server 占用过大",
+            "default": "hana-server 占用 {memoryMB} MB，内存压力偏大"
+          },
+          "textClockLine": {
+            "type": "string",
+            "title": "文案：时钟行",
+            "description": "可用占位符 {clock} {offset} {weekday} {vitals} {vitalsSuffix}",
+            "default": "[pc-status] 时钟 {clock} {offset} {weekday}{vitalsSuffix}"
+          },
+          "textClockVitalsSuffix": {
+            "type": "string",
+            "title": "文案：时钟行里的电量前缀",
+            "default": " · {vitals}"
+          },
+          "textSlowTool": {
+            "type": "string",
+            "title": "文案：慢调用",
+            "description": "可用占位符 {tool} {elapsed} {seconds}",
+            "default": "[pc-status] 本次 {tool} 调用耗时 {elapsed}"
+          },
+          "textNetworkOffline": {
+            "type": "string",
+            "title": "文案：网络中断",
+            "description": "可用占位符 {reason}",
+            "default": "[pc-status] 网络中断（{reason}），需要联网的操作会失败或超时"
+          },
+          "textNetworkOnline": {
+            "type": "string",
+            "title": "文案：网络恢复",
+            "description": "可用占位符 {duration}",
+            "default": "[pc-status] 网络已恢复（中断约 {duration}）"
+          },
+          "textNetworkDnsDown": {
+            "type": "string",
+            "title": "文案：DNS 异常",
+            "default": "[pc-status] DNS 解析异常，能连 IP 但域名解析不出来"
+          },
+          "textNetworkDnsBack": {
+            "type": "string",
+            "title": "文案：DNS 恢复",
+            "default": "[pc-status] DNS 解析恢复正常"
+          },
+          "textEncouragement": {
+            "type": "string",
+            "title": "文案：鼓励语",
+            "default": "资源紧张只是提醒，不影响执行：按原计划完整做完，不要缩减输出。"
+          }
+        }
+      }
+    }
+  }
+}
