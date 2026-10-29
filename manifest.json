@@ -2,8 +2,8 @@
   "manifestVersion": 1,
   "id": "pc-status",
   "name": "PC Status",
-  "version": "0.2.3",
-  "description": "感知本机状态：电量、充电、剩余可用时间、电源计划、负载与剩余空间；在工具调用中周期性注入当前时间；并在 hana-server 异常终止后于下次会话提醒 agent。",
+  "version": "0.3.0",
+  "description": "感知本机状态：电量、电源计划、负载与剩余空间；周期性注入当前时间；监测 hana-server 崩溃与网络状态变动。",
   "trust": "full-access",
   "minAppVersion": "0.82.0",
   "activationEvents": ["onStartup"],
@@ -44,6 +44,28 @@
           "title": "崩溃后提醒",
           "description": "hana-server 上一轮不是正常退出时，在下一次会话开始给 agent 递一张便条，提醒它上下文可能断了",
           "default": true
+        },
+        "networkWatchEnabled": {
+          "type": "boolean",
+          "title": "网络变动监测",
+          "description": "盯住在线与离线的切换，变化后下一次工具调用就提示；断网时间较长时还会在下次会话开头提醒",
+          "default": true
+        },
+        "networkProbeIntervalSeconds": {
+          "type": "number",
+          "title": "网络探测间隔（秒）",
+          "description": "多久探一次基础连通，范围 10 到 300",
+          "default": 25,
+          "minimum": 10,
+          "maximum": 300
+        },
+        "networkOutageThresholdMinutes": {
+          "type": "number",
+          "title": "断网提醒阈值（分钟）",
+          "description": "断网超过这么久，恢复后算一次「被打断」，会在下次会话开头提醒；低于它只作普通变动提示",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 240
         },
         "batteryLowPercent": {
           "type": "number",
@@ -153,6 +175,28 @@
           "title": "文案：慢调用",
           "description": "可用占位符 {tool} {elapsed} {seconds}",
           "default": "[pc-status] 本次 {tool} 调用耗时 {elapsed}"
+        },
+        "textNetworkOffline": {
+          "type": "string",
+          "title": "文案：网络中断",
+          "description": "可用占位符 {reason}",
+          "default": "[pc-status] 网络中断（{reason}），需要联网的操作会失败或超时"
+        },
+        "textNetworkOnline": {
+          "type": "string",
+          "title": "文案：网络恢复",
+          "description": "可用占位符 {duration}",
+          "default": "[pc-status] 网络已恢复（中断约 {duration}）"
+        },
+        "textNetworkDnsDown": {
+          "type": "string",
+          "title": "文案：DNS 异常",
+          "default": "[pc-status] DNS 解析异常，能连 IP 但域名解析不出来"
+        },
+        "textNetworkDnsBack": {
+          "type": "string",
+          "title": "文案：DNS 恢复",
+          "default": "[pc-status] DNS 解析恢复正常"
         },
         "textEncouragement": {
           "type": "string",

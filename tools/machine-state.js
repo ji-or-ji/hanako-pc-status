@@ -7,6 +7,7 @@
 import { collectMachineState, formatMachineStateText } from "../lib/system-state.js";
 import { readConfig, resolveDataDir } from "../lib/settings.js";
 import { readState } from "../lib/runtime-watch.js";
+import { readNetworkState } from "../lib/network-watch.js";
 
 export const name = "machine_state";
 export const description =
@@ -48,10 +49,12 @@ export async function execute(input = {}, toolCtx) {
   }
 
   const config = readConfig(toolCtx);
-  const runtime = readState(resolveDataDir(toolCtx));
+  const dataDir = resolveDataDir(toolCtx);
+  const runtime = readState(dataDir);
+  const network = readNetworkState(dataDir);
 
   if (input.format === "json") {
-    return JSON.stringify({ ...result.data, runtime }, null, 2);
+    return JSON.stringify({ ...result.data, runtime, network }, null, 2);
   }
-  return formatMachineStateText(result.data, config, runtime);
+  return formatMachineStateText(result.data, config, runtime, network);
 }

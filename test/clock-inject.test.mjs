@@ -6,7 +6,8 @@
  * 会真实读几次电量（每次约 0.5 秒），结束时把配置恢复成测试前的样子。
  */
 import path from "node:path";
-import { existsSync, unlinkSync } from "node:fs";
+import os from "node:os";
+import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   readConfigFromFile,
@@ -19,6 +20,11 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXT = pathToFileURL(path.join(HERE, "..", "extensions", "clock-inject.js")).href;
+
+// 甩开真实插件数据：否则会读到开发态或正式版里的网络事件、崩溃待提醒，让断言飘
+const fakeHome = path.join(os.tmpdir(), `hana-clock-test-${Date.now()}`);
+mkdirSync(path.join(fakeHome, "plugin-data", "pc-status"), { recursive: true });
+process.env.HANA_HOME = fakeHome;
 
 const dataDir = resolveDataDir(null);
 const configExisted = existsSync(configPath(dataDir));
@@ -164,11 +170,8 @@ if (configExisted) {
     thresholds: { ...DEFAULT_THRESHOLDS },
     texts: { ...DEFAULT_TEXTS },
   });
-} else {
-  // 测试前没有配置文件，就别给正式环境留一个
-  const file = configPath(dataDir);
-  if (existsSync(file)) unlinkSync(file);
 }
+rmSync(fakeHome, { recursive: true, force: true });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exitCode = failed === 0 ? 0 : 1;

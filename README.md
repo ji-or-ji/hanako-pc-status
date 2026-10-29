@@ -66,6 +66,23 @@ hana-server 崩掉时连日志都写不出来，插件也随之消失，那一�
 这条消息用 `display: false` 发出，用户看不见，只有 agent 收到，且只提醒一次。
 `machine_state` 里也会显示 `上次崩溃` 一行，方便事后排查。
 
+**4. 网络监测（lifecycle + extension）**
+
+每隔一段时间探一次基础连通（默认 25 秒），不算域名，直接 TCP 连 `223.5.5.5:53` 这类固定地址，避免 DNS 本身坏掉时误判。连通后再单独查一次常用域名，区分两种情况：
+
+| 状态 | 含义 |
+| :-- | :-- |
+| 在线 | TCP 通，DNS 正常 |
+| 离线 | TCP 不通 |
+| DNS 异常 | TCP 通但域名解析不出来 |
+
+状态切换要连续两次探测一致才确认，防抖动。变动分两档处理：
+
+- **普通变动**：在下一次工具调用时就注入一行，不用等新会话。比如 `[pc-status] 网络已恢复（中断约 2小时5分）`
+- **断得久**（超过阈值，默认 5 分钟）：额外记一条，下次会话开头给 agent 递一张便条，跟崩溃提醒一个待遇
+
+系统睡过一段时间再唤醒时，会重建基线而不是拿旧时间戳算“断网时长”，否则关一晚机器会被报成断网八小时。
+
 ## 配置
 
 两种入口，改的是同一份数据：
@@ -86,6 +103,9 @@ hana-server 崩掉时连日志都写不出来，插件也随之消失，那一�
 | `includeVitals` | true | 注入时是否附带电量 |
 | `reportSlowToolSeconds` | 60 | 慢调用提示阈值，0 关闭 |
 | `crashNoticeEnabled` | true | 崩溃后在下次会话提醒 agent |
+| `networkWatchEnabled` | true | 监测网络状态切换 |
+| `networkProbeIntervalSeconds` | 25 | 探测间隔，10 到 300 秒 |
+| `networkOutageThresholdMinutes` | 5 | 断网超过这么久算一次“被打断” |
 
 ### 阈值
 
@@ -115,10 +135,14 @@ hana-server 崩掉时连日志都写不出来，插件也随之消失，那一�
 | `clockLine` | 注入的时钟行 |
 | `clockVitalsSuffix` | 时钟行里电量摘要的前导分隔 |
 | `slowTool` | 慢调用提示 |
+| `networkOffline` | 网络中断 |
+| `networkOnline` | 网络恢复 |
+| `networkDnsDown` / `networkDnsBack` | DNS 异常与恢复 |
 | `encouragement` | 鼓励语本体 |
 
 可用占位符：`{percent}` `{usedPercent}` `{disk}` `{freeGB}` `{memoryMB}` `{clock}`
-`{offset}` `{weekday}` `{vitals}` `{vitalsSuffix}` `{tool}` `{elapsed}` `{seconds}`。
+`{offset}` `{weekday}` `{vitals}` `{vitalsSuffix}` `{tool}` `{elapsed}` `{seconds}`
+`{reason}` `{duration}`。
 模板只替换认识的占位符，写错的 `{xxx}` 会原样留在输出里，方便一眼看出笔误。
 
 ### 鼓励语
@@ -158,6 +182,7 @@ server 进程里跑的还是旧版，会报 `does not provide an export named ..
 ```bash
 node test/clock-inject.test.mjs   # 注入、节流、模板、鼓励语
 node test/crash-watch.test.mjs    # 崩溃判定与提醒（不需要真的把 server 弄崩）
+node test/network-watch.test.mjs  # 网络状态机与变动提示
 node test/lifecycle.test.mjs      # 心跳写入与干净退出标记
 ```
 

@@ -42,6 +42,18 @@ export const parameters = {
       type: "boolean",
       description: "hana-server 上一轮异常终止时，在下一次会话开始时提醒 agent",
     },
+    networkWatchEnabled: {
+      type: "boolean",
+      description: "是否监测网络状态切换（变化后下一次工具调用就提示，断得久时下次会话再提醒）",
+    },
+    networkProbeIntervalSeconds: {
+      type: "number",
+      description: "网络探测间隔，单位秒，范围 10 到 300",
+    },
+    networkOutageThresholdMinutes: {
+      type: "number",
+      description: "断网超过多少分钟算一次「被打断」，恢复后会在下次会话提醒",
+    },
     batteryLowPercent: {
       type: "number",
       description: "电量低于或等于这个百分比算偏低，默认 30",
@@ -132,6 +144,8 @@ function render(config, source) {
   lines.push(`  附带电量        ${config.includeVitalsInClock ? "是" : "否"}`);
   lines.push(`  慢调用提示      ${config.reportSlowToolSeconds > 0 ? `超过 ${config.reportSlowToolSeconds} 秒时提示` : "关闭"}`);
   lines.push(`  崩溃后提醒      ${config.crashNoticeEnabled ? "开" : "关"}`);
+  lines.push(`  网络监测        ${config.networkWatchEnabled ? `开，每 ${config.networkProbeIntervalSeconds} 秒探一次` : "关"}`);
+  lines.push(`  断网提醒阈值    ${config.networkOutageThresholdMinutes} 分钟`);
 
   lines.push("");
   lines.push("阈值");
@@ -192,6 +206,13 @@ export async function execute(input = {}, toolCtx) {
     patch.reportSlowToolSeconds = input.reportSlowToolSeconds;
   }
   if (typeof input.crashNoticeEnabled === "boolean") patch.crashNoticeEnabled = input.crashNoticeEnabled;
+  if (typeof input.networkWatchEnabled === "boolean") patch.networkWatchEnabled = input.networkWatchEnabled;
+  if (typeof input.networkProbeIntervalSeconds === "number" && Number.isFinite(input.networkProbeIntervalSeconds)) {
+    patch.networkProbeIntervalSeconds = input.networkProbeIntervalSeconds;
+  }
+  if (typeof input.networkOutageThresholdMinutes === "number" && Number.isFinite(input.networkOutageThresholdMinutes)) {
+    patch.networkOutageThresholdMinutes = input.networkOutageThresholdMinutes;
+  }
 
   if (input.resetThresholds === true) {
     patch.thresholds = { ...DEFAULT_THRESHOLDS };

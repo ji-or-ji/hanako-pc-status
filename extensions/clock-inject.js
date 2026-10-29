@@ -20,6 +20,7 @@ import {
 } from "../lib/system-state.js";
 import { fillTemplate, pickEncouragement } from "../lib/text.js";
 import { peekPendingCrash, takePendingCrash } from "../lib/runtime-watch.js";
+import { takePendingEvents, takePendingOutage } from "../lib/network-watch.js";
 
 const TAG = "[pc-status]";
 
@@ -45,6 +46,49 @@ function buildCrashNotice(crash) {
   return lines.join("\n");
 }
 
+function buildOutageNotice(outage) {
+  const lines = [];
+  const started = outage.startedAt ? new Date(outage.startedAt) : null;
+  const ended = outage.endedAt ? new Date(outage.endedAt) : null;
+  const startStamp = started && !Number.isNaN(started.getTime()) ? formatStamp(started) : null;
+  const endStamp = ended && !Number.isNaN(ended.getTime()) ? formatStamp(ended) : null;
+
+  lines.push("<pc-status-network-notice>");
+  lines.push("上一段会话期间网络断过一段时间。");
+  if (startStamp && endStamp) {
+    lines.push(`从 ${startStamp.clock} 到 ${endStamp.clock}，约 ${humanDuration(Math.round((outage.outageMs || 0) / 1000))}。`);
+  } else if (outage.outageMs) {
+    lines.push(`中断约 ${humanDuration(Math.round(outage.outageMs / 1000))}。`);
+  }
+  lines.push("");
+  lines.push("断网期间需要联网的操作（抓网页、拉仓库、调模型）会失败或超时，");
+  lines.push("上一轮对话可能因此断在中途。继续之前先确认上次进行到哪一步，");
+  lines.push("不要把断网造成的缺失当成任务已经完成。");
+  lines.push("</pc-status-network-notice>");
+  return lines.join("\n");
+}
+
+/** 把一条网络变动事件渲染成一行旁注 */
+function renderNetworkEvent(event, texts) {
+  const wasOffline = event.from?.status === "offline";
+  const nowOffline = event.to?.status === "offline";
+
+  if (nowOffline) {
+    return fillTemplate(texts.networkOffline, { reason: "TCP 探测失败" });
+  }
+  if (wasOffline && !nowOffline) {
+    const duration = event.outageMs ? humanDuration(Math.round(event.outageMs / 1000)) : "短暂";
+    return fillTemplate(texts.networkOnline, { duration });
+  }
+  if (event.from?.dnsOk === true && event.to?.dnsOk === false) {
+    return fillTemplate(texts.networkDnsDown, {});
+  }
+  if (event.from?.dnsOk === false && event.to?.dnsOk === true) {
+    return fillTemplate(texts.networkDnsBack, {});
+  }
+  return null;
+}
+
 export default function clockInjectExtension(pi) {
   // 每个 session 一份实例，状态天然按会话隔离
   let lastInjectedAt = 0;
@@ -55,30 +99,43 @@ export default function clockInjectExtension(pi) {
     setTimeout(() => {
       try {
         const dataDir = resolveExtensionDataDir();
-        if (!readConfigFromFile(dataDir).crashNoticeEnabled) {
-          // 用户关掉了提醒，也不再积压
+        const config = readConfigFromFile(dataDir);
+        const canSend = typeof pi.sendMessage === "function";
+
+        // 1) 上一班 hana-server 异常终止
+        if (!config.crashNoticeEnabled) {
           takePendingCrash(dataDir);
-          return;
+        } else {
+          const crash = peekPendingCrash(dataDir);
+          if (crash && canSend) {
+            pi.sendMessage(
+              {
+                customType: "pc-status-crash-notice",
+                content: buildCrashNotice(crash),
+                display: false,
+              },
+              { deliverAs: "steer", triggerTurn: false },
+            );
+            // 递成功才消费，失败就留着下次再试
+            takePendingCrash(dataDir);
+          }
         }
-        const crash = peekPendingCrash(dataDir);
-        if (!crash) return;
 
-        if (typeof pi.sendMessage !== "function") return;
-
-        pi.sendMessage(
-          {
-            customType: "pc-status-crash-notice",
-            content: buildCrashNotice(crash),
-            display: false,
-          },
-          { deliverAs: "steer", triggerTurn: false },
-        );
-
-        // 递成功才消费，失败就留着下次再试
-        takePendingCrash(dataDir);
+        // 2) 上一段会话期间断网断得较久
+        const outage = takePendingOutage(dataDir);
+        if (outage && config.networkWatchEnabled && canSend) {
+          pi.sendMessage(
+            {
+              customType: "pc-status-network-notice",
+              content: buildOutageNotice(outage),
+              display: false,
+            },
+            { deliverAs: "steer", triggerTurn: false },
+          );
+        }
       } catch (err) {
         try {
-          console.error(`${TAG} crash notice failed: ${err && err.message ? err.message : err}`);
+          console.error(`${TAG} session notice failed: ${err && err.message ? err.message : err}`);
         } catch {
           /* ignore */
         }
@@ -96,10 +153,19 @@ export default function clockInjectExtension(pi) {
     try {
       if (!event || !Array.isArray(event.content)) return undefined;
 
-      const config = readConfigFromFile(resolveExtensionDataDir());
+      const dataDir = resolveExtensionDataDir();
+      const config = readConfigFromFile(dataDir);
       const texts = config.texts || {};
       const notes = [];
       const now = Date.now();
+
+      // 网络变动：变化后的下一次工具调用就提示，不受时钟节流限制
+      const netEvents = takePendingEvents(dataDir);
+      if (netEvents.length && config.networkWatchEnabled) {
+        const rendered = renderNetworkEvent(netEvents[netEvents.length - 1], texts);
+        if (rendered) notes.push(rendered);
+        if (netEvents.length > 1) notes.push(`[pc-status] 网络状态连续变动 ${netEvents.length} 次`);
+      }
 
       const intervalMs = Math.max(1, Number(config.clockIntervalMinutes) || 10) * 60 * 1000;
       if (config.clockInjectEnabled && now - lastInjectedAt >= intervalMs) {
