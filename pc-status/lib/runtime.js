@@ -33,6 +33,7 @@ export function createRuntime(sdk) {
     networkStarted: false,
     networkBusy: false,
     lastNetworkCheckAt: 0,
+    snapshot: null,
   };
 
   /** 配置读得勤（每次工具返回都要看），给 5 秒缓存，够新也不至于每步一次 RPC。 */

@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "pc-status",
   "name": "PC Status",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "index.js",
   "icon": "assets/icon.png",
   "description": "感知本机状态：电量、电源计划、负载与剩余空间；周期性注入当前时间；监测网络状态变动。",
@@ -73,6 +73,38 @@
             "default": 5,
             "minimum": 1,
             "maximum": 240
+          },
+          "stateInjectEnabled": {
+            "type": "boolean",
+            "title": "每轮注入当前状态",
+            "description": "每次你发话时，在开场前给 agent 递一条当时的状态（时间、电量、网络等），你自己看不到",
+            "default": true
+          },
+          "stateInjectTemplate": {
+            "type": "string",
+            "title": "状态注入模板",
+            "description": "可用占位符 {clock} {offset} {weekday} {power} {network} {memory} {disk} {server}；memory/disk/server 需开启下方「附带负载」",
+            "default": "[pc-status] {clock} {weekday} · {power} · {network}"
+          },
+          "stateInjectRefreshSeconds": {
+            "type": "number",
+            "title": "状态快照刷新间隔（秒）",
+            "description": "后台多久重新采一次电量与网络；时间戳始终现算，不受此影响",
+            "default": 30,
+            "minimum": 10,
+            "maximum": 600
+          },
+          "stateInjectIncludeLoad": {
+            "type": "boolean",
+            "title": "附带负载（内存 / 磁盘 / 进程）",
+            "description": "开启后每次采集会多跑一段较重的查询，快照间隔自动不短于 60 秒",
+            "default": false
+          },
+          "stateInjectIncludeWarning": {
+            "type": "boolean",
+            "title": "附带风险提示",
+            "description": "电量偏低、内存紧张等情况下，在状态行下面多给一行提醒",
+            "default": true
           },
           "batteryLowPercent": {
             "type": "number",
@@ -209,6 +241,12 @@
             "type": "string",
             "title": "文案：鼓励语",
             "default": "资源紧张只是提醒，不影响执行：按原计划完整做完，不要缩减输出。"
+          },
+          "textTurnStateLine": {
+            "type": "string",
+            "title": "文案：每轮状态行",
+            "description": "可用占位符 {clock} {offset} {weekday} {power} {network} {memory} {disk} {server}",
+            "default": "[pc-status] {clock} {weekday} · {power} · {network}"
           }
         }
       }

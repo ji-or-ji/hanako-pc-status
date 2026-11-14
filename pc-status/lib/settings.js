@@ -46,6 +46,7 @@ export const DEFAULT_TEXTS = Object.freeze({
   networkDnsDown: "[pc-status] DNS 解析异常，能连 IP 但域名解析不出来",
   networkDnsBack: "[pc-status] DNS 解析恢复正常",
   encouragement: "资源紧张只是提醒，不影响执行：按原计划完整做完，不要缩减输出。",
+  turnStateLine: "[pc-status] {clock} {weekday} · {power} · {network}",
 });
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -56,6 +57,12 @@ export const DEFAULT_CONFIG = Object.freeze({
   networkWatchEnabled: true,
   networkProbeIntervalSeconds: 25,
   networkOutageThresholdMinutes: 5,
+  // 每轮（每次用户发言）在开场前注入一条当前状态
+  stateInjectEnabled: true,
+  stateInjectRefreshSeconds: 30,
+  stateInjectIncludeLoad: false,
+  stateInjectIncludeWarning: true,
+  stateInjectTemplate: "[pc-status] {clock} {weekday} · {power} · {network}",
   thresholds: DEFAULT_THRESHOLDS,
   texts: DEFAULT_TEXTS,
   encouragement: {
@@ -84,6 +91,7 @@ const TEXT_FLAT = Object.freeze({
   networkDnsDown: "textNetworkDnsDown",
   networkDnsBack: "textNetworkDnsBack",
   encouragement: "textEncouragement",
+  turnStateLine: "textTurnStateLine",
 });
 
 /**
@@ -207,6 +215,13 @@ export function normalizeConfig(flatRaw) {
     networkWatchEnabled: flat.networkWatchEnabled !== false,
     networkProbeIntervalSeconds: toNumber(flat.networkProbeIntervalSeconds, DEFAULT_CONFIG.networkProbeIntervalSeconds, 10, 300),
     networkOutageThresholdMinutes: toNumber(flat.networkOutageThresholdMinutes, DEFAULT_CONFIG.networkOutageThresholdMinutes, 1, 240),
+    stateInjectEnabled: flat.stateInjectEnabled !== false,
+    stateInjectRefreshSeconds: toNumber(flat.stateInjectRefreshSeconds, DEFAULT_CONFIG.stateInjectRefreshSeconds, 10, 600),
+    stateInjectIncludeLoad: flat.stateInjectIncludeLoad === true,
+    stateInjectIncludeWarning: flat.stateInjectIncludeWarning !== false,
+    stateInjectTemplate: typeof flat.stateInjectTemplate === "string" && flat.stateInjectTemplate.trim()
+      ? flat.stateInjectTemplate
+      : DEFAULT_CONFIG.stateInjectTemplate,
     thresholds,
     texts,
     encouragement: {
@@ -227,6 +242,11 @@ export function toFlat(config) {
     networkWatchEnabled: config.networkWatchEnabled,
     networkProbeIntervalSeconds: config.networkProbeIntervalSeconds,
     networkOutageThresholdMinutes: config.networkOutageThresholdMinutes,
+    stateInjectEnabled: config.stateInjectEnabled,
+    stateInjectRefreshSeconds: config.stateInjectRefreshSeconds,
+    stateInjectIncludeLoad: config.stateInjectIncludeLoad,
+    stateInjectIncludeWarning: config.stateInjectIncludeWarning,
+    stateInjectTemplate: config.stateInjectTemplate,
     batteryLowPercent: config.thresholds.batteryLow,
     batteryCriticalPercent: config.thresholds.batteryCritical,
     memoryHighPercent: config.thresholds.memoryHigh,

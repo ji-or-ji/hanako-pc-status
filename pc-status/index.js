@@ -6,6 +6,7 @@
  */
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { createRuntime } from "./lib/runtime.js";
+import { createSnapshotter } from "./lib/snapshot.js";
 import { registerHooks } from "./lib/hooks.js";
 import { register as registerMachineState } from "./tools/machine-state.js";
 import { register as registerClockControl } from "./tools/clock-control.js";
@@ -17,9 +18,13 @@ export default defineApp(async (sdk) => {
   await registerClockControl(sdk, runtime);
   registerHooks(sdk, runtime);
 
-  // 设置贡献要等 apply 落定才登记，稍微等一下再按真配置起网络监测。
+  // 设置贡献要等 apply 落定才登记，稍微等一下再按真配置起后台采集。
   // 定时器本身是固定节拍轮询，配置改了不用重启它。
-  const kickoff = setTimeout(() => runtime.startNetworkWatch(), 3000);
+  const snapshotter = createSnapshotter(sdk, runtime);
+  const kickoff = setTimeout(() => {
+    runtime.startNetworkWatch();
+    snapshotter.start();
+  }, 3000);
   kickoff.unref?.();
 
   await sdk.logger.info("PC Status 已加载");

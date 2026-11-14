@@ -12,7 +12,15 @@
  * 每次正常退出都报成崩溃。宁可不报，也不报错。
  */
 import { fillTemplate, pickEncouragement } from "./text.js";
-import { readVitals, vitalsSummary, batteryLevel, humanDuration, formatStamp } from "./system-state.js";
+import {
+  readVitals,
+  vitalsSummary,
+  batteryLevel,
+  humanDuration,
+  formatStamp,
+  describeNetwork,
+  collectWarnings,
+} from "./system-state.js";
 import { takePendingEvents, takePendingOutage } from "./network-watch.js";
 
 const TAG = "[pc-status]";
@@ -141,23 +149,97 @@ async function onToolResult(sdk, runtime, invocation) {
   }
 }
 
-async function onBeforeStart(sdk, runtime) {
-  try {
-    const outage = takePendingOutage(sdk.dataDir);
-    if (!outage) return undefined;
-    const cfg = await runtime.config();
-    if (!cfg.networkWatchEnabled) return undefined;
-    return {
-      message: {
-        customType: "pc-status-network-notice",
-        content: buildOutageNotice(outage),
-        display: false,
-      },
-    };
-  } catch (err) {
-    await sdk.logger.warn(`session notice failed: ${err?.message || err}`);
-    return undefined;
+/** 把快照渲染成每轮开场的那一条状态 */
+function renderTurnState(cfg, snap) {
+  const texts = cfg.texts || {};
+  const stamp = formatStamp(new Date());
+  const s = snap || {};
+  const load = s.load || null;
+  const sys = load?.system || null;
+
+  const memory = sys && typeof sys.memoryUsedPercent === "number"
+    ? `内存 ${sys.memoryUsedPercent}%（${sys.memoryUsedGB} / ${sys.memoryTotalGB} GB）`
+    : "";
+  const disk = Array.isArray(sys?.disks) && sys.disks.length
+    ? sys.disks.map((d) => `${d.name} 剩 ${d.freeGB} GB`).join(" · ")
+    : "";
+
+  let server = "";
+  if (Array.isArray(load?.hana)) {
+    const proc = load.hana.find((p) => p.name === "hana-server");
+    if (proc) server = proc.running ? `hana-server ${proc.memoryMB} MB` : "hana-server 未运行";
   }
+
+  const lines = [
+    fillTemplate(texts.turnStateLine, {
+      clock: stamp.clock,
+      offset: stamp.offset,
+      weekday: stamp.weekday,
+      power: s.power || "电量未知",
+      network: describeNetwork(s.network),
+      memory,
+      disk,
+      server,
+    }),
+  ];
+
+  if (cfg.stateInjectIncludeWarning) {
+    if (load) {
+      for (const warning of collectWarnings(load, cfg)) lines.push(`${TAG} 注意 ${warning}`);
+    } else if (s.level === "critical" || s.level === "low") {
+      const percent = s.vitals?.batteryPercent;
+      const template = s.level === "critical"
+        ? texts.batteryCritical
+        : (s.vitals?.charging ? texts.batteryLowCharging : texts.batteryLowDischarging);
+      lines.push(`${TAG} 注意 ${fillTemplate(template, { percent })}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function onBeforeStart(sdk, runtime) {
+  const parts = [];
+  let cfg = null;
+  try {
+    cfg = await runtime.config();
+  } catch {
+    cfg = null;
+  }
+
+  // 1) 上一段会话期间断网较久，先交代一声
+  if (cfg?.networkWatchEnabled !== false) {
+    try {
+      const outage = takePendingOutage(sdk.dataDir);
+      if (outage) parts.push(buildOutageNotice(outage));
+    } catch (err) {
+      await sdk.logger.warn(`session notice failed: ${err?.message || err}`);
+    }
+  }
+
+  // 2) 每一轮（每次用户发言）都带上一条当前状态
+  if (cfg?.stateInjectEnabled !== false) {
+    try {
+      // 后台快照还没第一份（刚启动/刚装完），这次就当场补一次，
+      // 宁可慢半秒，也好过递一条“电量未知”出去。
+      if (!runtime.state.snapshot && typeof runtime.state.ensureSnapshot === "function") {
+        await runtime.state.ensureSnapshot();
+      }
+      const note = renderTurnState(cfg, runtime.state.snapshot);
+      if (note) parts.push(note);
+    } catch (err) {
+      await sdk.logger.warn(`turn state failed: ${err?.message || err}`);
+    }
+  }
+
+  if (parts.length === 0) return undefined;
+  return {
+    message: {
+      customType: "pc-status-turn-state",
+      content: parts.join("\n\n"),
+      display: false,
+    },
+  };
 }
 
 export function registerHooks(sdk, runtime) {

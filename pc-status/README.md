@@ -20,7 +20,21 @@
 
 参数 `format: "json"` 可拿原始结构，适合需要精确数值判断的场合。
 
-**2. 时钟注入（`tools/post-execute` 钩子）**
+**2. 每轮状态注入（`agent/before-start` 钩子）**
+
+每次你发话，在 agent 开场前先给它递一条当时的状态，你自己在对话里看不到这条：
+
+```
+[pc-status] 2026-11-03 11:54:37 周二 · 电池 53%（放电中） · 剩约 1 小时 47 分 · 在线 · 延迟 17ms · DNS 正常
+```
+
+默认只含时间、电量、网络，所有文本都能改（`stateInjectTemplate`）。要再带上内存、磁盘、
+`hana-server` 占用，把「附带负载」打开就行，代价是后台采集会重一些，快照间隔不短于 60 秒。
+
+这条状态不跑 PowerShell：后台每 30 秒采一份快照缓着，注入时读缓存，时间戳现算，
+所以不会因为注入而卡住每轮开场。刚装完还没第一份快照时，会当场补采一次。
+
+**3. 时钟注入（`tools/post-execute` 钩子）**
 
 挂在工具返回链路上。任意工具返回时，若距上次注入已超过设定间隔（默认 10 分钟），
 就在该次结果末尾追加一行：
@@ -83,6 +97,14 @@ DNS 那一维就跟着倒了，相关文案留着但不会再单独触发。
 
 ### 注入行为
 
+| 参数 | 默认 | 含义 |
+| :-- | :-- | :-- |
+| `stateInjectEnabled` | true | 每轮发话时注入状态 |
+| `stateInjectTemplate` | 见上 | 状态行模板 |
+| `stateInjectRefreshSeconds` | 30 | 快照刷新间隔 |
+| `stateInjectIncludeLoad` | false | 附带内存 / 磁盘 / 进程 |
+| `stateInjectIncludeWarning` | true | 附带风险提示一行 |
+| `clockInjectEnabled` | true | 工具返回时注入时钟 |
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `enabled` | true | 是否启用时钟注入 |
@@ -120,7 +142,7 @@ DNS 那一维就跟着倒了，相关文案留着但不会再单独触发。
 | `serverHeavy` | hana-server 占用过大 |
 | `clockLine` | 注入的时钟行 |
 | `clockVitalsSuffix` | 时钟行里电量摘要的前导分隔 |
-| `slowTool` | 慢调用提示 |
+| `slowTool` | 慢调用提示 || `textTurnStateLine` | 每轮状态行 |
 | `networkOffline` | 网络中断 |
 | `networkOnline` | 网络恢复 |
 | `networkDnsDown` / `networkDnsBack` | DNS 异常与恢复（v2 实际不会触发） |
